@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Word Jumble</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=Space+Mono:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="wrapper">
+      <header>
+        <div class="logo">
+          <span>WORD</span><span>JUMBLE</span>
+        </div>
+      </header>
+
+      <div class="stats-bar">
+        <div class="stat">
+          <div class="stat-val" id="scoreVal">0</div>
+          <div class="stat-label">Score</div>
+        </div>
+        <div class="stat">
+          <div class="stat-val" id="roundVal">1</div>
+          <div class="stat-label">Round</div>
+        </div>
+        <div class="stat">
+          <div class="stat-val" id="totalVal">10</div>
+          <div class="stat-label">Total</div>
+        </div>
+      </div>
+
+      <div class="progress-wrap">
+        <div class="progress-bar" id="progressBar" style="width: 0%"></div>
+      </div>
+
+      <!-- Game Panel -->
+      <div class="game-card" id="gamePanel">
+        <div class="sentence-counter" id="sentenceCounter">
+          SENTENCE 1 OF 10
+        </div>
+        <div class="hint-text" id="hintText">—</div>
+
+        <div class="dropzone-label">📥 Build your sentence here</div>
+        <div class="dropzone" id="dropzone">
+          <span class="dropzone-placeholder" id="dzPlaceholder"
+            >Drop words here…</span
+          >
+        </div>
+
+        <div class="words-label">🔤 Available words</div>
+        <div class="words-pool" id="wordsPool"></div>
+      </div>
+
+      <div class="feedback" id="feedback"></div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" id="checkBtn" onclick="checkAnswer()">
+          Check ✓
+        </button>
+        <button class="btn btn-ghost" id="clearBtn" onclick="clearZone()">
+          Clear ✗
+        </button>
+        <button class="btn btn-ghost" id="skipBtn" onclick="skipSentence()">
+          Skip →
+        </button>
+      </div>
+
+      <!-- Win Screen -->
+      <div class="win-screen" id="winScreen">
+        <div class="win-icon">🏆</div>
+        <div class="win-title">You Did It!</div>
+        <div class="win-sub">All sentences unscrambled</div>
+        <div class="win-score" id="winScore"></div>
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="restartGame()">
+            Play Again 🔁
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const SENTENCES = [
+        {
+          words: [
+            "The",
+            "quick",
+            "brown",
+            "fox",
+            "jumps",
+            "over",
+            "the",
+            "lazy",
+            "dog",
+          ],
+          hint: "A famous pangram sentence",
+        },
+        {
+          words: ["She", "sells", "seashells", "by", "the", "seashore"],
+          hint: "A classic tongue twister",
+        },
+        {
+          words: ["Actions", "speak", "louder", "than", "words"],
+          hint: "A popular proverb about behaviour",
+        },
+        {
+          words: ["Knowledge", "is", "power"],
+          hint: "Famous quote by Francis Bacon",
+        },
+        {
+          words: ["Every", "cloud", "has", "a", "silver", "lining"],
+          hint: "An idiom about optimism",
+        },
+        {
+          words: ["Practice", "makes", "perfect"],
+          hint: "A saying about improvement",
+        },
+        {
+          words: ["The", "early", "bird", "catches", "the", "worm"],
+          hint: "About the rewards of waking up early",
+        },
+        {
+          words: ["A", "picture", "is", "worth", "a", "thousand", "words"],
+          hint: "About the power of visuals",
+        },
+        {
+          words: ["Time", "flies", "when", "you", "are", "having", "fun"],
+          hint: "About how time feels when you enjoy yourself",
+        },
+        {
+          words: [
+            "Where",
+            "there",
+            "is",
+            "a",
+            "will",
+            "there",
+            "is",
+            "a",
+            "way",
+          ],
+          hint: "About determination",
+        },
+      ];
+
+      let currentIdx = 0;
+      let score = 0;
+      let answered = 0;
+      let dragSrc = null;
+      let dragFrom = null; // 'pool' or 'zone'
+      let zoneWords = [];
+      let poolWords = [];
+      let locked = false;
+
+      function shuffle(arr) {
+        const a = [...arr];
+        for (let i = a.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [a[i], a[j]] = [a[j], a[i]];
+        }
+        return a;
+      }
+
+      function renderPool() {
+        const pool = document.getElementById("wordsPool");
+        pool.innerHTML = "";
+        poolWords.forEach((item) => {
+          pool.appendChild(makeChip(item, "pool"));
+        });
+      }
+
+      function renderZone() {
+        const dz = document.getElementById("dropzone");
+        const chips = dz.querySelectorAll(".word-chip");
+        chips.forEach((c) => c.remove());
+        zoneWords.forEach((item) => {
+          dz.appendChild(makeChip(item, "zone"));
+        });
+        document.getElementById("dzPlaceholder").style.opacity =
+          zoneWords.length ? "0" : "1";
+      }
+
+      function makeChip(item, from) {
+        const chip = document.createElement("span");
+        chip.className =
+          "word-chip" +
+          (from === "zone" ? " in-zone" : "") +
+          (locked ? " locked" : "");
+        chip.textContent = item.word;
+        chip.dataset.id = item.id;
+        chip.dataset.from = from;
+        chip.draggable = !locked;
+
+        chip.addEventListener("dragstart", (e) => {
+          if (locked) return;
+          dragSrc = item;
+          dragFrom = from;
+          setTimeout(() => chip.classList.add("dragging"), 0);
+          e.dataTransfer.effectAllowed = "move";
+        });
+        chip.addEventListener("dragend", () => {
+          chip.classList.remove("dragging");
+        });
+
+        // Click to toggle
+        chip.addEventListener("click", () => {
+          if (locked) return;
+          if (from === "pool") {
+            poolWords = poolWords.filter((w) => w.id !== item.id);
+            zoneWords.push(item);
+          } else {
+            zoneWords = zoneWords.filter((w) => w.id !== item.id);
+            poolWords.push(item);
+          }
+          renderPool();
+          renderZone();
+        });
+
+        return chip;
+      }
+
+      // Drop zone events
+      const dz = document.getElementById("dropzone");
+      dz.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        dz.classList.add("drag-over");
+      });
+      dz.addEventListener("dragleave", () => dz.classList.remove("drag-over"));
+      dz.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dz.classList.remove("drag-over");
+        if (!dragSrc) return;
+        if (dragFrom === "pool") {
+          poolWords = poolWords.filter((w) => w.id !== dragSrc.id);
+          zoneWords.push(dragSrc);
+        }
+        // Reorder within zone — insert at drop position
+        const afterEl = getDragAfterElement(dz, e.clientX);
+        if (dragFrom === "zone") {
+          zoneWords = zoneWords.filter((w) => w.id !== dragSrc.id);
+          if (afterEl) {
+            const afterIdx = zoneWords.findIndex(
+              (w) => w.id === afterEl.dataset.id,
+            );
+            zoneWords.splice(afterIdx, 0, dragSrc);
+          } else {
+            zoneWords.push(dragSrc);
+          }
+        }
+        dragSrc = null;
+        dragFrom = null;
+        renderPool();
+        renderZone();
+      });
+
+      // Pool drop events (drag back from zone)
+      const pool = document.getElementById("wordsPool");
+      pool.addEventListener("dragover", (e) => e.preventDefault());
+      pool.addEventListener("drop", (e) => {
+        e.preventDefault();
+        if (!dragSrc || dragFrom !== "zone") return;
+        zoneWords = zoneWords.filter((w) => w.id !== dragSrc.id);
+        poolWords.push(dragSrc);
+        dragSrc = null;
+        dragFrom = null;
+        renderPool();
+        renderZone();
+      });
+
+      function getDragAfterElement(container, x) {
+        const draggableElements = [
+          ...container.querySelectorAll(".word-chip:not(.dragging)"),
+        ];
+        return draggableElements.reduce(
+          (closest, child) => {
+            const box = child.getBoundingClientRect();
+            const offset = x - box.left - box.width / 2;
+            if (offset < 0 && offset > closest.offset) {
+              return { offset, element: child };
+            }
+            return closest;
+          },
+          { offset: Number.NEGATIVE_INFINITY },
+        ).element;
+      }
+
+      function clearZone() {
+        if (locked) return;
+        poolWords = [...poolWords, ...zoneWords];
+        zoneWords = [];
+        renderPool();
+        renderZone();
+        setFeedback("", "");
+      }
+
+      function skipSentence() {
+        if (locked) return;
+        answered++;
+        setFeedback("", "");
+        nextOrWin();
+      }
+
+      function nextOrWin() {
+        currentIdx++;
+        if (currentIdx >= SENTENCES.length) {
+          showWin();
+        } else {
+          loadSentence(currentIdx);
+        }
+      }
+
+      function showWin() {
+        document.getElementById("gamePanel").style.display = "none";
+        document.querySelector(".btn-row").style.display = "none";
+        document.getElementById("feedback").style.display = "none";
+        const ws = document.getElementById("winScreen");
+        ws.classList.add("visible");
+        document.getElementById("winScore").textContent =
+          `Final Score: ${score} / ${SENTENCES.length * 10} points`;
+      }
+
+      function setFeedback(msg, cls) {
+        const el = document.getElementById("feedback");
+        el.textContent = msg;
+        el.className = "feedback " + cls;
+      }
+
+      function updateProgress() {
+        const pct = (currentIdx / SENTENCES.length) * 100;
+        document.getElementById("progressBar").style.width = pct + "%";
+      }
+
+      // Shuffle sentence order on every page load
+      let shuffledSentences = shuffle(SENTENCES);
+      const _origLoad = loadSentence;
+      function loadSentence(idx) {
+        locked = false;
+        zoneWords = [];
+        const s = shuffledSentences[idx];
+        poolWords = shuffle(s.words.map((w, i) => ({ word: w, id: `w${i}` })));
+        document.getElementById("hintText").textContent = s.hint;
+        document.getElementById("sentenceCounter").textContent =
+          `SENTENCE ${idx + 1} OF ${shuffledSentences.length}`;
+        document.getElementById("roundVal").textContent = idx + 1;
+        setFeedback("", "");
+        renderPool();
+        renderZone();
+        updateProgress();
+      }
+
+      // Override checkAnswer to use shuffledSentences
+      const _origCheck = checkAnswer;
+      function checkAnswer() {
+        if (locked || zoneWords.length === 0) return;
+        const correct = shuffledSentences[currentIdx].words;
+        const attempt = zoneWords.map((w) => w.word);
+        const isCorrect = JSON.stringify(attempt) === JSON.stringify(correct);
+        if (isCorrect) {
+          score += 10;
+          answered++;
+          document.getElementById("scoreVal").textContent = score;
+          setFeedback("✅ Correct! Well done!", "show-correct");
+          dz.classList.add("correct");
+          locked = true;
+          renderZone();
+          setTimeout(() => {
+            dz.classList.remove("correct");
+            nextOrWin();
+          }, 1200);
+        } else {
+          setFeedback("❌ Not quite right — try again!", "show-wrong");
+          dz.classList.add("wrong");
+          setTimeout(() => dz.classList.remove("wrong"), 500);
+        }
+      }
+
+      function restartGame() {
+        shuffledSentences = shuffle(SENTENCES); // re-shuffle on replay too
+        currentIdx = 0;
+        score = 0;
+        answered = 0;
+        document.getElementById("scoreVal").textContent = "0";
+        document.getElementById("gamePanel").style.display = "";
+        document.querySelector(".btn-row").style.display = "";
+        document.getElementById("feedback").style.display = "";
+        document.getElementById("winScreen").classList.remove("visible");
+        loadSentence(0);
+      }
+
+      // Init
+      loadSentence(0);
+      document.getElementById("totalVal").textContent = SENTENCES.length;
+    </script>
+  </body>
+</html>
